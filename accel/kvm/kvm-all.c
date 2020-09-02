@@ -2528,6 +2528,8 @@ int kvm_cpu_exec(CPUState *cpu)
             break;
         case KVM_EXIT_SHUTDOWN:
             DPRINTF("shutdown\n");
+            fprintf(stderr, "DEBUG KVM_EXIT_SHUTDOWN\n");
+            cpu_dump_state(cpu, stderr, 0); //CPUState *cs, FILE *f, int flags)
             qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
             ret = EXCP_INTERRUPT;
             break;
@@ -2540,6 +2542,7 @@ int kvm_cpu_exec(CPUState *cpu)
             ret = kvm_handle_internal_error(cpu, run);
             break;
         case KVM_EXIT_SYSTEM_EVENT:
+            fprintf(stderr, "DEBUG KVM_EXIT_SYSTEM_EVENT: type=%d\n", run->system_event.type);
             switch (run->system_event.type) {
             case KVM_SYSTEM_EVENT_SHUTDOWN:
                 qemu_system_shutdown_request(SHUTDOWN_CAUSE_GUEST_SHUTDOWN);
