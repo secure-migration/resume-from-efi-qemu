@@ -538,6 +538,17 @@ void x86_cpu_dump_state(CPUState *cs, FILE *f, int flags)
         }
     }
     qemu_fprintf(f, "EFER=%016" PRIx64 "\n", env->efer);
+#ifdef TARGET_X86_64
+    qemu_fprintf(f, "MSR_SYSENTER_CS=%08x\n", env->sysenter_cs);
+    qemu_fprintf(f, "MSR_SYSENTER_ESP=%016" PRIx64 "\n", env->sysenter_esp);
+    qemu_fprintf(f, "MSR_SYSENTER_EIP=%016" PRIx64 "\n", env->sysenter_eip);
+    qemu_fprintf(f, "MSR_STAR=%016" PRIx64 "\n", env->star);
+    qemu_fprintf(f, "MSR_LSTAR=%016" PRIx64 "\n", env->lstar);
+    qemu_fprintf(f, "MSR_CSTAR=%016" PRIx64 "\n", env->cstar);
+    qemu_fprintf(f, "MSR_FMASK=%016" PRIx64 "\n", env->fmask);
+    qemu_fprintf(f, "MSR_KERNELGSBASE=%016" PRIx64 "\n", env->kernelgsbase);
+    qemu_fprintf(f, "MSR_TSC_AUX=%016" PRIx64 "\n", env->tsc_aux);
+#endif
     if (flags & CPU_DUMP_FPU) {
         int fptag;
         fptag = 0;
