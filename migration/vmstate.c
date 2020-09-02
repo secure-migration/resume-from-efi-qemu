@@ -20,6 +20,8 @@
 #include "trace.h"
 #include "qjson.h"
 
+#include "qemu/qemu-print.h"
+
 static int vmstate_subsection_save(QEMUFile *f, const VMStateDescription *vmsd,
                                    void *opaque, QJSON *vmdesc);
 static int vmstate_subsection_load(QEMUFile *f, const VMStateDescription *vmsd,
@@ -75,11 +77,16 @@ static void vmstate_handle_alloc(void *ptr, const VMStateField *field,
     }
 }
 
+static bool in_cpu = false;
+
 int vmstate_load_state(QEMUFile *f, const VMStateDescription *vmsd,
                        void *opaque, int version_id)
 {
     const VMStateField *field = vmsd->fields;
     int ret = 0;
+    bool this_in_cpu = false;
+
+    if (strcmp("cpu", vmsd->name) == 0) { this_in_cpu = true; in_cpu = true; }
 
     trace_vmstate_load_state(vmsd->name, version_id);
     if (version_id > vmsd->version_id) {
@@ -110,6 +117,9 @@ int vmstate_load_state(QEMUFile *f, const VMStateDescription *vmsd,
     }
     while (field->name) {
         trace_vmstate_load_state_field(vmsd->name, field->name);
+        if (in_cpu) {
+            //qemu_printf("DEBUG 111 in_cpu=%d vmsd->name=%s field->name=%s\n", in_cpu, vmsd->name, field->name);
+        }
         if ((field->field_exists &&
              field->field_exists(opaque, version_id)) ||
             (!field->field_exists &&
@@ -140,7 +150,64 @@ int vmstate_load_state(QEMUFile *f, const VMStateDescription *vmsd,
                     ret = vmstate_load_state(f, field->vmsd, curr_elem,
                                              field->struct_version_id);
                 } else {
-                    ret = field->info->get(f, curr_elem, size, field);
+                    if (in_cpu) {
+                        if ((strcmp(field->name, "env.regs") == 0) ||
+                            (strcmp(field->name, "env.eflags") == 0) ||
+                            (strcmp(field->name, "env.hflags") == 0) ||
+                            (strcmp(field->name, "env.cr[0]") == 0) ||
+                            (strcmp(field->name, "env.cr[2]") == 0) ||
+                            (strcmp(field->name, "env.cr[3]") == 0) ||
+                            (strcmp(field->name, "env.cr[4]") == 0) ||
+                            (strcmp(field->name, "env.eip") == 0) ||
+                            (strcmp(field->name, "env.sysenter_cs") == 0) ||
+                            (strcmp(field->name, "env.sysenter_esp") == 0) ||
+                            (strcmp(field->name, "env.sysenter_eip") == 0) ||
+                            (strcmp(field->name, "env.dr") == 0) ||
+                            (strcmp(field->name, "env.a20_mask") == 0) ||
+                            (strcmp(field->name, "env.mxcsr") == 0) ||
+                            //(strcmp(field->name, "env.efer") == 0) ||
+                            (strcmp(field->name, "env.star") == 0) ||
+                            (strcmp(field->name, "env.lstar") == 0) ||
+                            (strcmp(field->name, "env.cstar") == 0) ||
+                            (strcmp(field->name, "env.fmask") == 0) ||
+                            (strcmp(field->name, "env.kernelgsbase") == 0) ||
+                            (strcmp(field->name, "env.smbase") == 0) ||
+                            (strcmp(field->name, "env.pat") == 0) ||
+                            (strcmp(field->name, "env.hflags2") == 0) ||
+                            (strcmp(field->name, "env.tsc") == 0) ||
+                            (strcmp(vmsd->name, "segment") == 0) ||
+                            (1 == 2)) {
+                            qemu_printf("DEBUG 222 NOT RESTORING in_cpu field=%s size=%d i=%d n_elems=%d curr_elem=%lx\n", field->name, size, i, n_elems, *((uint64_t*)(curr_elem)));
+                            char dummy[1024];
+                            ret = field->info->get(f, &dummy, size, field);
+                            if (size == 8) {
+                                uint64_t orig_val = *((uint64_t*)(curr_elem));
+                                uint64_t savevm_val = *((uint64_t*)(dummy));
+                                qemu_printf("DEBUG 222 NOT RESTORING in_cpu field=%s size=%d i=%d n_elems=%d orig_val=%lx savevm_val=%lx\n", field->name, size, i, n_elems, orig_val, savevm_val);
+
+                            } else if (size == 4) {
+                                uint32_t orig_val = *((uint32_t*)(curr_elem));
+                                uint32_t savevm_val = *((uint32_t*)(dummy));
+                                qemu_printf("DEBUG 222 NOT RESTORING in_cpu field=%s size=%d i=%d n_elems=%d orig_val=%x savevm_val=%x\n", field->name, size, i, n_elems, orig_val, savevm_val);
+                            }
+                        } else {
+                            ret = field->info->get(f, curr_elem, size, field);
+                            qemu_printf("DEBUG 222     RESTORING in_cpu name=%s field=%s field->info->name=%s size=%d i=%d n_elems=%d curr_elem=%lx\n", vmsd->name, field->name, field->info->name, size, i, n_elems, *((uint64_t*)(curr_elem)));
+                        }
+                        //  ret = 0;
+                        //  //ret = field->info->get(f, curr_elem, size, field);
+                        //} else {
+                        //  ret = field->info->get(f, curr_elem, size, field);
+                        //}
+                        //qemu_printf("DEBUG 222 NOT RESTORING in_cpu field=%s field->info->name=%s size=%d i=%d n_elems=%d curr_elem=%lx\n", field->name, field->info->name, size, i, n_elems, *((uint64_t*)(curr_elem)));
+                        //uint64_t dummy;
+                        //ret = field->info->get(f, &dummy, size, field);
+                        //qemu_printf("DEBUG 333 NOT RESTORING name=%s field=%s field->info->name=%s size=%d i=%d n_elems=%d dummy----=%lx\n", vmsd->name, field->name, field->info->name, size, i, n_elems, dummy);
+                        //ret = field->info->get(f, curr_elem, size, field);
+                    } else {
+                        ret = field->info->get(f, curr_elem, size, field);
+                        //qemu_printf("DEBUG 222     RESTORING name=%s field=%s field->info->name=%s size=%d i=%d n_elems=%d curr_elem=%lx\n", vmsd->name, field->name, field->info->name, size, i, n_elems, *((uint64_t*)(curr_elem)));
+                    }
                 }
                 if (ret >= 0) {
                     ret = qemu_file_get_error(f);
@@ -168,6 +235,7 @@ int vmstate_load_state(QEMUFile *f, const VMStateDescription *vmsd,
         ret = vmsd->post_load(opaque, version_id);
     }
     trace_vmstate_load_state_end(vmsd->name, "end", ret);
+    if (this_in_cpu) { in_cpu = false; }
     return ret;
 }
 
