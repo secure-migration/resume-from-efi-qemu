@@ -56,6 +56,8 @@
 #include "qemu/iov.h"
 #include "multifd.h"
 
+#include "qemu/qemu-print.h"
+
 /***********************************************************/
 /* ram save/restore */
 
@@ -159,6 +161,10 @@ out:
 
 static bool ramblock_is_ignored(RAMBlock *block)
 {
+    //if (strcmp(block->idstr, "system.flash0") == 0) {
+    //    // Don't restore the flash0 area to allow using the new OVMF
+    //    return true;
+    //}
     return !qemu_ram_is_migratable(block) ||
            (migrate_ignore_shared() && qemu_ram_is_shared(block));
 }
@@ -3408,6 +3414,7 @@ void colo_flush_ram_cache(void)
  */
 static int ram_load_precopy(QEMUFile *f)
 {
+    bool skip_it = false;
     int flags = 0, ret = 0, invalid_flags = 0, len = 0, i = 0;
     /* ADVISE is earlier, it shows the source has the postcopy capability on */
     bool postcopy_advised = postcopy_is_advised();
@@ -3447,8 +3454,17 @@ static int ram_load_precopy(QEMUFile *f)
         if (flags & (RAM_SAVE_FLAG_ZERO | RAM_SAVE_FLAG_PAGE |
                      RAM_SAVE_FLAG_COMPRESS_PAGE | RAM_SAVE_FLAG_XBZRLE)) {
             RAMBlock *block = ram_block_from_stream(f, flags);
+            //if (strcmp(block->idstr, "system.flash0") == 0) {
+            //    skip_it = true;
+            //}
 
             host = host_from_ram_block_offset(block, addr);
+            //if (addr <= 0x000000003FFFFFFF) {
+            if (addr >= 0x000000003E3B0000 && addr < (0x000000003E3B0000 + 0xC000)) {
+                skip_it = false; // true;
+            } else {
+                skip_it = false;
+            }
             /*
              * After going into COLO stage, we should not load the page
              * into SVM's memory directly, we put them into colo_cache firstly.
@@ -3553,7 +3569,14 @@ static int ram_load_precopy(QEMUFile *f)
             break;
 
         case RAM_SAVE_FLAG_PAGE:
+            if (skip_it) {
+                uint8_t dummy[TARGET_PAGE_SIZE];
+                qemu_printf("FAKE skip Migration Handler host=%p addr=%" PRIx64 "\n", host, (uint64_t)addr);
+                trace_ram_load_loop("FAKE skip MIGRATION-HANDLER", (uint64_t)addr, flags, host);
+                qemu_get_buffer(f, dummy, TARGET_PAGE_SIZE);
+            } else {
             qemu_get_buffer(f, host, TARGET_PAGE_SIZE);
+            }
             break;
 
         case RAM_SAVE_FLAG_COMPRESS_PAGE:
