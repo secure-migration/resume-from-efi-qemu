@@ -807,6 +807,19 @@ ERST
     },
 
 SRST
+``pmemload`` *addr* *size* *file*
+  save to disk physical memory dump starting at *addr* of size *size*.
+ERST
+
+    {
+        .name       = "pmemload",
+        .args_type  = "val:l,size:i,filename:s",
+        .params     = "addr size file",
+        .help       = "save to disk physical memory dump starting at 'addr' of size 'size'",
+        .cmd        = hmp_pmemload,
+    },
+
+SRST
 ``pmemsave`` *addr* *size* *file*
   save to disk physical memory dump starting at *addr* of size *size*.
 ERST
