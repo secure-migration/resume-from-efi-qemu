@@ -1135,10 +1135,15 @@ void qemu_savevm_state_header(QEMUFile *f)
     qemu_put_be32(f, QEMU_VM_FILE_MAGIC);
     qemu_put_be32(f, QEMU_VM_FILE_VERSION);
 
+    fprintf(stderr, "DEBUG qemu_savevm_state_header before deciding if to save config\n");
     if (migrate_get_current()->send_configuration) {
+        fprintf(stderr, "DEBUG qemu_savevm_state_header before putting byte %02x ftell=%lu\n", QEMU_VM_CONFIGURATION, qemu_ftell(f));
         qemu_put_byte(f, QEMU_VM_CONFIGURATION);
+        fprintf(stderr, "DEBUG qemu_savevm_state_header 110 ftell=%lu\n", qemu_ftell(f));
         vmstate_save_state(f, &vmstate_configuration, &savevm_state, 0);
+        fprintf(stderr, "DEBUG qemu_savevm_state_header 120 ftell=%lu\n", qemu_ftell(f));
     }
+    fprintf(stderr, "DEBUG qemu_savevm_state_header end\n");
 }
 
 bool qemu_savevm_state_guest_unplug_pending(void)
@@ -1574,10 +1579,14 @@ int qemu_save_device_state(QEMUFile *f)
 {
     SaveStateEntry *se;
 
+    fprintf(stderr, "DEBUG qemu_save_device_state 100 ftell=%lu\n", qemu_ftell(f));
     if (!migration_in_colo_state()) {
+        fprintf(stderr, "DEBUG qemu_save_device_state 101 ftell=%lu\n", qemu_ftell(f));
         qemu_put_be32(f, QEMU_VM_FILE_MAGIC);
+        fprintf(stderr, "DEBUG qemu_save_device_state 102 ftell=%lu\n", qemu_ftell(f));
         qemu_put_be32(f, QEMU_VM_FILE_VERSION);
     }
+    fprintf(stderr, "DEBUG qemu_save_device_state 110 ftell=%lu\n", qemu_ftell(f));
     cpu_synchronize_all_states();
 
     QTAILQ_FOREACH(se, &savevm_state.handlers, entry) {
@@ -1593,6 +1602,21 @@ int qemu_save_device_state(QEMUFile *f)
             continue;
         }
 
+        if ((strcmp("cpu", se->idstr) == 0) ||
+            (strcmp("cpu_common", se->idstr) == 0) ||
+            (strcmp("0000:00:1f.0/ICH9LPC", se->idstr) == 0)) {
+            fprintf(stderr, "DEBUG qemu_save_device_state SKIPPING se->idstr=%s\n", se->idstr);
+            continue;
+        }
+
+        // Skip almost all sections
+        if (strcmp("slirp", se->idstr) != 0) {
+            fprintf(stderr, "DEBUG qemu_save_device_state SKIPPING se->idstr=%s\n", se->idstr);
+            continue;
+        }
+
+        fprintf(stderr, "DEBUG qemu_save_device_state se->idstr=%s\n", se->idstr);
+        fprintf(stderr, "DEBUG qemu_save_device_state se->vmsd->name=%s\n", (se->vmsd && se->vmsd->name) ? se->vmsd->name : "(null)");
         save_section_header(f, se, QEMU_VM_SECTION_FULL);
 
         ret = vmstate_save(f, se, NULL);
@@ -2372,16 +2396,21 @@ static int qemu_loadvm_state_header(QEMUFile *f)
     }
 
     if (migrate_get_current()->send_configuration) {
+        fprintf(stderr, "DEBUG qemu_loadvm_state_header before reading byte ftell=%lu\n", qemu_ftell(f));
         if (qemu_get_byte(f) != QEMU_VM_CONFIGURATION) {
-            error_report("Configuration section missing");
-            qemu_loadvm_state_cleanup();
-            return -EINVAL;
-        }
+            fprintf(stderr, "DEBUG qemu_loadvm_state_header missing config section\n");
+            //error_report("Configuration section missing");
+            //qemu_loadvm_state_cleanup();
+            //return -EINVAL;
+        } else {
+            fprintf(stderr, "DEBUG qemu_loadvm_state_header found config section\n");
         ret = vmstate_load_state(f, &vmstate_configuration, &savevm_state, 0);
+            fprintf(stderr, "DEBUG qemu_loadvm_state_header read config section ret=%d ftell=%lu\n", ret, qemu_ftell(f));
 
         if (ret) {
             qemu_loadvm_state_cleanup();
             return ret;
+        }
         }
     }
     return 0;
@@ -2542,20 +2571,25 @@ int qemu_loadvm_state(QEMUFile *f)
         return -EINVAL;
     }
 
+    fprintf(stderr, "DEBUG qemu_loadvm_state before qemu_loadvm_state_header\n");
     ret = qemu_loadvm_state_header(f);
     if (ret) {
         return ret;
     }
 
+    fprintf(stderr, "DEBUG qemu_loadvm_state before qemu_loadvm_state_setup\n");
     if (qemu_loadvm_state_setup(f) != 0) {
         return -EINVAL;
     }
 
-    cpu_synchronize_all_pre_loadvm();
+    fprintf(stderr, "DEBUG qemu_loadvm_state skipping cpu_synchronize_all_pre_loadvm\n");
+    //cpu_synchronize_all_pre_loadvm();
 
+    fprintf(stderr, "DEBUG qemu_loadvm_state before qemu_loadvm_state_main\n");
     ret = qemu_loadvm_state_main(f, mis);
     qemu_event_set(&mis->main_thread_load_event);
 
+    fprintf(stderr, "DEBUG qemu_loadvm_state after qemu_loadvm_state_main\n");
     trace_qemu_loadvm_state_post_main(ret);
 
     if (mis->have_listen_thread) {
@@ -2602,8 +2636,10 @@ int qemu_loadvm_state(QEMUFile *f)
         }
     }
 
+    fprintf(stderr, "DEBUG qemu_loadvm_state_cleanup\n");
     qemu_loadvm_state_cleanup();
-    cpu_synchronize_all_post_init();
+    fprintf(stderr, "DEBUG skipping cpu_synchronize_all_post_init\n");
+    //cpu_synchronize_all_post_init();
 
     return ret;
 }
@@ -2803,6 +2839,7 @@ void qmp_xen_load_devices_state(const char *filename, Error **errp)
     QIOChannelFile *ioc;
     int ret;
 
+    fprintf(stderr, "DEBUG qmp_xen_load_devices_state started\n");
     /* Guest must be paused before loading the device state; the RAM state
      * will already have been loaded by xc
      */
@@ -2820,12 +2857,17 @@ void qmp_xen_load_devices_state(const char *filename, Error **errp)
     f = qemu_fopen_channel_input(QIO_CHANNEL(ioc));
     object_unref(OBJECT(ioc));
 
+    bool orig_send_configuration = migrate_get_current()->send_configuration;
+    migrate_get_current()->send_configuration = false;
     ret = qemu_loadvm_state(f);
+    migrate_get_current()->send_configuration = orig_send_configuration;
     qemu_fclose(f);
     if (ret < 0) {
+        fprintf(stderr, "DEBUG qmp_xen_load_devices_state: qemu_loadvm_state ret=%d\n", ret);
         error_setg(errp, QERR_IO_ERROR);
     }
     migration_incoming_state_destroy();
+    fprintf(stderr, "DEBUG qmp_xen_load_devices_state done\n");
 }
 
 int load_snapshot(const char *name, Error **errp)
