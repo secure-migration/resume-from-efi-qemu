@@ -1610,10 +1610,10 @@ int qemu_save_device_state(QEMUFile *f)
         }
 
         // Skip almost all sections
-        if (strcmp("slirp", se->idstr) != 0) {
-            fprintf(stderr, "DEBUG qemu_save_device_state SKIPPING se->idstr=%s\n", se->idstr);
-            continue;
-        }
+        //if (strcmp("slirp", se->idstr) != 0) {
+        //    fprintf(stderr, "DEBUG qemu_save_device_state SKIPPING se->idstr=%s\n", se->idstr);
+        //    continue;
+        //}
 
         fprintf(stderr, "DEBUG qemu_save_device_state se->idstr=%s\n", se->idstr);
         fprintf(stderr, "DEBUG qemu_save_device_state se->vmsd->name=%s\n", (se->vmsd && se->vmsd->name) ? se->vmsd->name : "(null)");
@@ -2560,7 +2560,7 @@ out:
     return ret;
 }
 
-int qemu_loadvm_state(QEMUFile *f)
+static int qemu_loadvm_state_inner(QEMUFile *f, bool should_sync_cpu)
 {
     MigrationIncomingState *mis = migration_incoming_get_current();
     Error *local_err = NULL;
@@ -2582,8 +2582,12 @@ int qemu_loadvm_state(QEMUFile *f)
         return -EINVAL;
     }
 
-    fprintf(stderr, "DEBUG qemu_loadvm_state skipping cpu_synchronize_all_pre_loadvm\n");
-    //cpu_synchronize_all_pre_loadvm();
+    if (should_sync_cpu) {
+        fprintf(stderr, "DEBUG qemu_loadvm_state calling cpu_synchronize_all_pre_loadvm\n");
+        cpu_synchronize_all_pre_loadvm();
+    } else {
+        fprintf(stderr, "DEBUG qemu_loadvm_state skipping cpu_synchronize_all_pre_loadvm\n");
+    }
 
     fprintf(stderr, "DEBUG qemu_loadvm_state before qemu_loadvm_state_main\n");
     ret = qemu_loadvm_state_main(f, mis);
@@ -2638,10 +2642,19 @@ int qemu_loadvm_state(QEMUFile *f)
 
     fprintf(stderr, "DEBUG qemu_loadvm_state_cleanup\n");
     qemu_loadvm_state_cleanup();
-    fprintf(stderr, "DEBUG skipping cpu_synchronize_all_post_init\n");
-    //cpu_synchronize_all_post_init();
+    if (should_sync_cpu) {
+        fprintf(stderr, "DEBUG calling cpu_synchronize_all_post_init\n");
+        cpu_synchronize_all_post_init();
+    } else {
+        fprintf(stderr, "DEBUG skipping cpu_synchronize_all_post_init\n");
+    }
 
     return ret;
+}
+
+int qemu_loadvm_state(QEMUFile *f)
+{
+    return qemu_loadvm_state_inner(f, true);
 }
 
 int qemu_load_device_state(QEMUFile *f)
@@ -2859,7 +2872,7 @@ void qmp_xen_load_devices_state(const char *filename, Error **errp)
 
     bool orig_send_configuration = migrate_get_current()->send_configuration;
     migrate_get_current()->send_configuration = false;
-    ret = qemu_loadvm_state(f);
+    ret = qemu_loadvm_state_inner(f, false);
     migrate_get_current()->send_configuration = orig_send_configuration;
     qemu_fclose(f);
     if (ret < 0) {
@@ -2940,7 +2953,9 @@ int load_snapshot(const char *name, Error **errp)
     mis->from_src_file = f;
 
     aio_context_acquire(aio_context);
+    fprintf(stderr, "DEBUG in load_snapshot, calling qemu_loadvm_state\n");
     ret = qemu_loadvm_state(f);
+    fprintf(stderr, "DEBUG in load_snapshot, after   qemu_loadvm_state\n");
     migration_incoming_state_destroy();
     aio_context_release(aio_context);
 
